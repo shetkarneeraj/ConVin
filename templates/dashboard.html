@@ -1,0 +1,133 @@
+{% extends "base.html" %} {% block content %}
+<!-- Your content goes here -->
+<section class="text-gray-600 body-font">
+  <div class="container px-5 py-24 mx-auto flex flex-wrap">
+    <div
+      class="flex flex-wrap -mx-4 mt-auto mb-auto lg:w-1/2 sm:w-2/3 content-start sm:pr-10"
+    >
+      <div class="w-full sm:p-4 px-4 mb-6">
+        <h1 class="title-font font-medium text-xl mb-2 text-gray-900">
+          Welcome to SplitWise
+        </h1>
+        <div class="leading-relaxed">
+          Here you can record your expenses and share split with your friends
+        </div>
+      </div>
+      <div class="p-4 sm:w-1/2 lg:w-1/4 w-1/2">
+        <h2 class="title-font font-medium text-3xl text-gray-900">
+          ₹ {{ debt }}
+        </h2>
+        <p class="leading-relaxed">Debt</p>
+      </div>
+      <div class="p-4 sm:w-1/2 lg:w-1/4 w-1/2">
+        <h2 class="title-font font-medium text-3xl text-gray-900">
+          ₹ {{ debt_owed }}
+        </h2>
+        <p class="leading-relaxed">Debt owed</p>
+      </div>
+      <div class="p-4 sm:w-1/2 lg:w-1/4 w-1/2">
+        <h2 class="title-font font-medium text-3xl text-gray-900">
+          ₹ {{ expense }}
+        </h2>
+        <p class="leading-relaxed">Net expenses</p>
+      </div>
+    </div>
+    <div
+      class="lg:w-1/2 sm:w-1/3 w-full rounded-lg overflow-hidden mt-6 sm:mt-0"
+    >
+      <img
+        class="object-cover object-center w-full h-full"
+        src="https://dummyimage.com/600x300"
+        alt="stats"
+      />
+    </div>
+  </div>
+</section>
+
+<!-- Section for Payments -->
+<section class="text-gray-600 body-font">
+  <div class="container mx-auto py-24 w-full">
+    <!-- Outer grid with 2 columns, one for each half -->
+    <div class="grid grid-cols-2 gap-4 w-full">
+      <!-- Left half -->
+      <div class="space-y-4 gap-4">
+        <div class="container mx-auto py-24 gap-4">
+          <!-- Adjust width to cover half the screen -->
+          <div class="text-center w-full mb-10">
+            <h1
+              class="sm:text-3xl text-2xl font-medium title-font text-gray-900"
+            >
+              Your Payments
+            </h1>
+            <p class="leading-relaxed">Recent payments</p>
+          </div>
+
+          <!-- Payment grid layout -->
+          <div class="grid grid-cols-2 gap-4">
+            {% if payments == [] %}
+            <p>No payments found</p>
+            {% else %}
+            <!-- 6x2 grid with 2 columns -->
+            {% for payment in payments %}
+            <!-- Example Payment Card -->
+            <div class="border-2 border-gray-200 p-6 rounded-lg">
+              <h2 class="text-lg font-medium text-gray-900 title-font mb-2">
+                Payment on {{ payment.time }}
+              </h2>
+              <p class="leading-relaxed text-base">
+                Amount: ₹{{ payment.amount }}
+              </p>
+              <p class="leading-relaxed text-base">
+                Paid for: {{ payment.purpose }}
+              </p>
+            </div>
+            {% endfor %} {% endif %}
+          </div>
+          <!-- End of grid -->
+        </div>
+      </div>
+
+      <!-- Right half -->
+      <div class="gap-4 space-y-4">
+        <div class="container mx-auto py-24">
+          <!-- Adjust width to cover half the screen -->
+          <div class="text-center w-full mb-10">
+            <h1
+              class="sm:text-3xl text-2xl font-medium title-font text-gray-900"
+            >
+              Pending splits
+            </h1>
+            <p class="leading-relaxed">Below are the pending splits for you</p>
+          </div>
+
+          <!-- Payment grid layout -->
+          <div class="grid grid-cols-2 gap-4">
+            <!-- 6x2 grid with 2 columns -->
+            {% if splits == [] %}
+            <p>No payments found</p>
+            {% else %} {% for split in splits %}
+            <!-- Example Payment Card -->
+            <div
+              class="{{'border-2 border-red-200 p-6 rounded-lg'  if not split.status else 'border-2 border-green-200 p-6 rounded-lg' }}"
+            >
+              <h2 class="text-lg font-medium text-gray-900 title-font mb-2">
+                Payment {{ split.time }} | {{ split.purpose }}
+              </h2>
+              <p class="leading-relaxed text-base">Amount: ₹150</p>
+              <p class="leading-relaxed text-base">
+                Paid by: {{ split.payer_id.name }}
+              </p>
+            </div>
+            {% endfor %} {% endif %}
+          </div>
+          <!-- End of grid -->
+        </div>
+      </div>
+    </div>
+    <!-- End of outer grid -->
+  </div>
+</section>
+
+<script></script>
+
+{% endblock %}

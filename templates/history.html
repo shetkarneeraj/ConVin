@@ -1,0 +1,147 @@
+{% extends "base.html" %} {% block content %}
+<section class="text-gray-600 body-font">
+  <div class="container px-5 py-24 mx-auto">
+    <div class="flex flex-col text-center w-full mb-20">
+      <h1
+        class="sm:text-4xl text-3xl font-medium title-font mb-2 text-gray-900"
+      >
+        Payment History
+      </h1>
+      <p class="lg:w-2/3 mx-auto leading-relaxed text-base">
+        View your payment history below, paginated for easy navigation.
+      </p>
+    </div>
+    <div class="lg:w-2/3 w-full mx-auto overflow-auto">
+      <table
+        id="paymentHistoryTable"
+        class="table-auto w-full text-left whitespace-no-wrap"
+      >
+        <thead>
+          <tr>
+            <th
+              class="px-4 py-3 title-font tracking-wider font-medium text-gray-900 text-sm bg-gray-100 rounded-tl rounded-bl"
+            >
+              Date
+            </th>
+            <th
+              class="px-4 py-3 title-font tracking-wider font-medium text-gray-900 text-sm bg-gray-100"
+            >
+              Amount
+            </th>
+            <th
+              class="px-4 py-3 title-font tracking-wider font-medium text-gray-900 text-sm bg-gray-100"
+            >
+              Description
+            </th>
+            <th
+              class="px-4 py-3 title-font tracking-wider font-medium text-gray-900 text-sm bg-gray-100"
+            >
+              Split
+            </th>
+            <th
+              class="w-10 title-font tracking-wider font-medium text-gray-900 text-sm bg-gray-100 rounded-tr rounded-br"
+            ></th>
+          </tr>
+        </thead>
+        <tbody id="paymentHistoryBody">
+          <!-- Rows will be populated dynamically with JavaScript -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div class="flex justify-center mt-4">
+      <button id="prevPage" class="text-indigo-500" onclick="prevPage()">
+        Previous
+      </button>
+      <span class="mx-2"
+        >Page <span id="currentPage">1</span> of <span id="totalPages"></span
+      ></span>
+      <button id="nextPage" class="text-indigo-500" onclick="nextPage()">
+        Next
+      </button>
+    </div>
+  </div>
+</section>
+
+<script>
+  const payments = {{ payments | tojson }}; // Convert the payments data to JSON
+  const rowsPerPage = 10;
+  let currentPage = 1;
+  const totalPages = Math.ceil(payments.length / rowsPerPage);
+
+  document.getElementById('totalPages').textContent = totalPages;
+
+  function renderPage(page) {
+    const start = (page - 1) * rowsPerPage;
+    const end = start + rowsPerPage;
+    const paymentHistoryBody = document.getElementById('paymentHistoryBody');
+    paymentHistoryBody.innerHTML = ''; // Clear existing rows
+
+    const pagePayments = payments.slice(start, end);
+
+    pagePayments.forEach(payment => {
+      const row = document.createElement('tr');
+
+      const dateCell = document.createElement('td');
+      dateCell.classList.add('px-4', 'py-3');
+      dateCell.textContent = payment.time;
+
+      const amountCell = document.createElement('td');
+      amountCell.classList.add('px-4', 'py-3');
+      amountCell.textContent = payment.amount;
+
+      const descriptionCell = document.createElement('td');
+      descriptionCell.classList.add('px-4', 'py-3');
+      descriptionCell.textContent = payment.purpose;
+
+      const splitCell = document.createElement('td');
+      splitCell.classList.add('px-4', 'py-3', 'text-lg', 'text-gray-900');
+      payment.splits.forEach(split => {
+        const nameSpan = document.createElement('span');
+        nameSpan.classList.add('text-gray-600');
+        nameSpan.textContent = split.user.name;
+
+        const separatorSpan = document.createElement('span');
+        separatorSpan.classList.add('text-gray-500');
+        separatorSpan.textContent = ' / ';
+
+        const amountSpan = document.createElement('span');
+        amountSpan.classList.add('text-gray-400');
+        amountSpan.textContent = split.amount;
+
+        splitCell.appendChild(nameSpan);
+        splitCell.appendChild(separatorSpan);
+        splitCell.appendChild(amountSpan);
+        splitCell.appendChild(document.createElement('br'));
+      });
+
+      row.appendChild(dateCell);
+      row.appendChild(amountCell);
+      row.appendChild(descriptionCell);
+      row.appendChild(splitCell);
+
+      paymentHistoryBody.appendChild(row);
+    });
+
+    document.getElementById('currentPage').textContent = currentPage;
+  }
+
+  function nextPage() {
+    if (currentPage < totalPages) {
+      currentPage++;
+      renderPage(currentPage);
+    }
+  }
+
+  function prevPage() {
+    if (currentPage > 1) {
+      currentPage--;
+      renderPage(currentPage);
+    }
+  }
+
+  // Initial render
+  renderPage(currentPage);
+</script>
+{% endblock %}

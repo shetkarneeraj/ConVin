@@ -1,0 +1,346 @@
+{% extends "base.html" %} {% block content %}
+<div class="container mx-auto py-24 flex flex-wrap items-start">
+  <!-- First Form -->
+  <div class="w-full lg:w-1/2 md:w-1/2 p-4">
+    <h2 class="text-gray-900 text-lg font-medium title-font mb-5">
+      Payment Details {{ current_user.email }}
+    </h2>
+    <div class="relative mb-4">
+      <label for="amount" class="leading-7 text-sm text-gray-600">Amount</label>
+      <input
+        type="text"
+        id="amount"
+        name="amount"
+        class="w-full bg-white rounded border border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 text-base outline-none text-gray-700 py-1 px-3 leading-8 transition-colors duration-200 ease-in-out"
+      />
+    </div>
+    <div class="relative mb-4">
+      <label for="description" class="leading-7 text-sm text-gray-600"
+        >Description</label
+      >
+      <input
+        type="text"
+        id="description"
+        name="description"
+        class="w-full bg-white rounded border border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 text-base outline-none text-gray-700 py-1 px-3 leading-8 transition-colors duration-200 ease-in-out"
+      />
+    </div>
+    <div class="relative mb-4">
+      <label for="date" class="leading-7 text-sm text-gray-600">Date</label>
+      <input
+        type="date"
+        id="date"
+        name="date"
+        value=""
+        class="w-full bg-white rounded border border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 text-base outline-none text-gray-700 py-1 px-3 leading-8 transition-colors duration-200 ease-in-out"
+      />
+    </div>
+    <div class="relative mb-4">
+      <label for="split" class="leading-7 text-sm text-gray-600"
+        >Split As</label
+      >
+      <select
+        id="split"
+        name="split"
+        class="w-full bg-white rounded border border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 text-base outline-none text-gray-700 py-1 px-3 leading-8 transition-colors duration-200 ease-in-out"
+        onchange="toggleSplitWithField()"
+      >
+        <option value="equal">Equal</option>
+        <option value="percentage">Percentage</option>
+        <option value="exact">Exact Amount</option>
+      </select>
+    </div>
+    <div class="relative mb-4">
+      <label for="splitWith" class="leading-7 text-sm text-gray-600"
+        >Split With</label
+      >
+      <div id="splitWithContainer"></div>
+      <!-- Dynamically added users and amounts -->
+    </div>
+    <button
+      class="text-white bg-indigo-500 border-0 py-2 px-8 focus:outline-none hover:bg-indigo-600 rounded text-lg"
+      onclick="makePayment()"
+    >
+      Submit Payment
+    </button>
+  </div>
+
+  <!-- Second Form -->
+  <div class="w-full lg:w-1/2 md:w-1/2 p-4">
+    <h2 class="text-gray-900 text-lg font-medium title-font mb-5">
+      User Search
+    </h2>
+    <div class="relative mb-4">
+      <label for="search" class="leading-7 text-sm text-gray-600"
+        >Search User</label
+      >
+      <input
+        type="text"
+        id="search"
+        name="search"
+        class="w-full bg-white rounded border border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 text-base outline-none text-gray-700 py-1 px-3 leading-8 transition-colors duration-200 ease-in-out"
+        onkeyup="fetchUsers()"
+      />
+    </div>
+    <div id="userList"></div>
+  </div>
+</div>
+
+<script>
+  let current_user_data = {
+    id: "{{ current_user.id }}", // Ensure proper serialization
+    name: "{{ current_user.name }}",
+    email: "{{ current_user.email }}",
+    username: "{{ current_user.username }}",
+  };
+
+  // Initialize split_with with the current user
+  var split_with = [current_user_data];
+  console.log(split_with);
+
+  // Default split mode to "equal"
+  var split_mode = "equal";
+
+  // Fetch user list based on search input
+  async function fetchUsers() {
+    const searchInput = document.getElementById("search").value;
+    const userListDiv = document.getElementById("userList");
+    const amount = document.getElementById("amount").value;
+
+    if (searchInput.length < 1) {
+      userListDiv.style.display = "none"; // Hide if input is empty
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:5000/search/${searchInput}`
+      );
+      const data = await response.json();
+
+      userListDiv.innerHTML = ""; // Clear previous results
+
+      if (data.users.length > 0) {
+        data.users.forEach((user) => {
+          const userDiv = document.createElement("div");
+          userDiv.textContent = `${user.name} (${user.email})`;
+          userDiv.setAttribute("data-id", user.id); // Optional: store user ID for later use
+          userDiv.onclick = function () {
+            selectUser(user);
+          };
+          userListDiv.appendChild(userDiv);
+        });
+        userListDiv.style.display = "block"; // Show user list
+      } else {
+        userListDiv.style.display = "none"; // Hide if no users found
+      }
+    } catch (error) {
+      console.error("Error fetching users:", error);
+    }
+  }
+
+  async function makePayment() {
+    const amount = document.getElementById("amount").value;
+    const description = document.getElementById("description").value;
+    const date = document.getElementById("date").value;
+
+    if (!amount || !description || !date) {
+      alert("Please fill all fields");
+      return;
+    }
+
+    // Get the split mode
+    const splitMode = document.getElementById("split").value;
+
+    if (splitMode === "percentage") {
+      total_percentage = 0;
+      split_with.forEach((user) => {
+        const percentageInput = document.getElementById(user.username);
+        total_percentage += parseFloat(percentageInput.value);
+      });
+      console.log(total_percentage);
+      if (total_percentage !== 100) {
+        alert("Total percentage should be 100");
+        return;
+      }
+    } else if (splitMode === "exact") {
+      total_amount = 0;
+      split_with.forEach((user) => {
+        const amountInput = document.getElementById(user.username);
+        total_amount += parseFloat(amountInput.value);
+      });
+      if (total_amount !== parseFloat(amount)) {
+        alert("Total amount should be equal to the payment amount");
+        return;
+      }
+    }
+
+    // Get the split with users and amounts
+    const splitWith = split_with.map((user) => {
+      const amountInput = document.getElementById(user.username); // Get the input field by username
+      let final_amount = 0;
+
+      if (splitMode === "percentage") {
+        const percentage = parseFloat(amountInput.value) || 0;
+        final_amount = (percentage / 100) * amount;
+      } else if (splitMode === "exact") {
+        final_amount = parseFloat(amountInput.value) || 0;
+      } else if (splitMode === "equal") {
+        final_amount = parseFloat(amount) / split_with.length || 0;
+      }
+
+      // Return the object for each user
+      return {
+        username: user.username,
+        id: user.id,
+        amount: final_amount,
+      };
+    });
+
+    if (splitWith.length < 2) {
+      alert("Please select users to split the payment with");
+      return;
+    }
+
+    // Prepare the payment data
+    const paymentData = {
+      amount,
+      description,
+      date,
+      splitMode,
+      splitWith,
+    };
+    // Make api call
+    try {
+      const response = await fetch("http://127.0.0.1:5000/payment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(paymentData),
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          alert("Payment made successfully");
+          window.location.href = "/history";
+        });
+    } catch (error) {
+      console.error("Error making payment:", error);
+    }
+  }
+
+  // Handle user selection
+  function selectUser(user) {
+    user.amount = 0;
+    // Check if the suer is already in the list
+    if (split_with.find((u) => u.username === user.username)) {
+      split_with = split_with.filter((u) => u.username !== user.username);
+      return;
+    }
+    split_with.push(user);
+    document.getElementById("search").value = ""; // Clear search field
+    renderSelectedUsers();
+    document.getElementById("userList").style.display = "none"; // Hide user list
+  }
+
+  // Render the selected users with input fields for amounts
+  function renderSelectedUsers() {
+    const splitWithContainer = document.getElementById("splitWithContainer");
+    splitWithContainer.innerHTML = ""; // Clear previous users
+
+    const totalAmount =
+      parseFloat(document.getElementById("amount").value) || 0;
+    const splitCount = split_with.length;
+    const equalAmount = totalAmount / splitCount;
+
+    split_with.forEach((user) => {
+      const userDiv = document.createElement("div");
+      userDiv.classList.add("grid", "grid-cols-10", "items-center", "mb-2");
+
+      // Label: User's name and email in 7/10 space
+      const label = document.createElement("label");
+      label.textContent = `${user.name} (${user.email})`;
+      if (split_mode === "equal") {
+        label.classList.add("col-span-9"); // Use 9 columns if "equal" is selected
+      } else {
+        label.classList.add("col-span-7"); // Use 7 columns for other modes
+      }
+
+      // Add the common classes
+      label.classList.add("text-sm", "text-gray-600");
+
+      // Input: Amount or percentage input in 2/10 space
+      const input = document.createElement("input");
+      input.type = "text";
+      input.classList.add(
+        "col-span-2",
+        "w-full",
+        "bg-gray-100",
+        "rounded",
+        "border",
+        "border-gray-300",
+        "py-1",
+        "px-3"
+      );
+      input.name = user.username;
+      input.id = user.username;
+      input.hidden = split_mode === "equal";
+      input.placeholder = split_mode === "equal" ? "Equal Amount" : "Amount";
+
+      // Add the label, input, and delete button to the div
+      userDiv.appendChild(label);
+      userDiv.appendChild(input);
+      if (user.username != "{{ current_user.username }}") {
+        // Delete Button: Takes 1/10 space
+        const deleteButton = document.createElement("button");
+        deleteButton.textContent = "X";
+        deleteButton.classList.add(
+          "col-span-1",
+          "text-gray-500",
+          "hover:text-gray-700"
+        );
+        deleteButton.onclick = function () {
+          const index = split_with.indexOf(user);
+          split_with.splice(index, 1);
+          renderSelectedUsers(); // Re-render the selected users
+        };
+        userDiv.appendChild(deleteButton);
+      }
+
+      splitWithContainer.appendChild(userDiv);
+    });
+  }
+
+  // Toggle the split with field based on selected option
+  function toggleSplitWithField() {
+    split_mode = document.getElementById("split").value;
+    renderSelectedUsers(); // Re-render the selected users with updated split mode
+  }
+
+  // Set default date to today
+  window.onload = function () {
+    const dateInput = document.getElementById("date");
+    const today = new Date().toISOString().split("T")[0]; // Format YYYY-MM-DD
+    dateInput.value = today; // Set default date
+  };
+</script>
+
+<style>
+  #userList {
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    background-color: white;
+    display: none; /* Initially hidden */
+  }
+
+  #userList div {
+    padding: 8px;
+    cursor: pointer;
+  }
+
+  #userList div:hover {
+    background-color: #f0f0f0;
+  }
+</style>
+{% endblock %}
