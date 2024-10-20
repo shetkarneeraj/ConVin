@@ -3,7 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_security import Security, SQLAlchemyUserDatastore, login_required, \
     UserMixin, RoleMixin, logout_user, current_user
 from flask_security.utils import hash_password
-from sqlalchemy import or_, func, extract
+from sqlalchemy import or_, func, extract, and_
 import random
 from datetime import datetime, date
 
@@ -42,7 +42,7 @@ class Payment(db.Model):
         return {
             'payment_id': self.payment_id,
             'user_id': self.user_id,
-            'amount': self.amount,
+            'amount': round(self.amount, 2),
             'time': datetime.strftime(self.time, "%d-%m-%Y"),
             'purpose': self.purpose,
             'status': self.status
@@ -67,8 +67,9 @@ class Split(db.Model):
             'purpose': Payment.query.filter(Payment.payment_id == self.payment_id).first().purpose,
             'user': User.query.filter(User.id == self.user_id).first().serialize(),
             'payer_id': User.query.filter(User.id == self.payer_id).first().serialize(),
-            'amount': self.amount,
+            'amount': round(self.amount, 2),
             'paid': self.status,
+            'status': self.status,
             'time': datetime.strftime(self.time, "%d-%m-%Y"),
         }
 
@@ -189,57 +190,84 @@ def payment():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    payments = Payment.query.filter_by(user_id=current_user.id).all()
+    payments = Payment.query.filter_by(user_id=current_user.id).order_by(Payment.time.desc()).all()
     payments = [payment.serialize() for payment in payments]
     splits = Split.query.filter(
-        or_(Split.user_id == current_user.id, Split.payer_id == current_user.id)
-    ).all()
-    splits = [split.serialize() for split in splits][:6]
+        or_(
+            and_(Split.user_id == current_user.id, Split.payer_id != current_user.id),
+            and_(Split.payer_id == current_user.id, Split.user_id != current_user.id)
+        ),
+        and_(extract('year', Split.time) == current_year, extract('month', Split.time) == current_month)
+    ).order_by(Split.time.desc()).all()
+    splits = [split.serialize() for split in splits][:6]  # Limit to the latest 6 splits
     debt = Split.query.filter_by(user_id=current_user.id, status=False).all()
     debt = sum([int(entity.serialize()["amount"]) for entity in debt])
     debt_owed = Split.query.filter_by(payer_id=current_user.id, status=False).all()
     debt_owed = sum([int(entity.serialize()["amount"]) for entity in debt_owed])
     expense = sum(
-    [int(entity.serialize()["amount"]) for entity in Split.query.filter_by(user_id=current_user.id)
-     .filter(extract('year', Split.time) == current_year)
-     .filter(extract('month', Split.time) == current_month)
-     .all()]
-)
+        [int(entity.serialize()["amount"]) for entity in Split.query.filter_by(user_id=current_user.id)
+         .filter(extract('year', Split.time) == current_year)
+         .filter(extract('month', Split.time) == current_month)
+         .order_by(Split.time.desc())  # Order by date
+         .all()]
+    )
     return render_template('dashboard.html', payments=payments, splits=splits, debt=debt, debt_owed=debt_owed, expense=expense)
 
 @app.route('/history')
 @login_required
 def history():
-    payments = Payment.query.filter_by(user_id=current_user.id).all()
+    payments = Payment.query.filter_by(user_id=current_user.id).order_by(Payment.time.desc()).all()
     payments = [payment.serialize() for payment in payments]
     for payment in payments:
-        splits = Split.query.filter_by(payment_id=payment['payment_id']).all()
+        splits = Split.query.filter_by(payment_id=payment['payment_id']).order_by(Split.time.desc()).all()
         splits = [split.serialize() for split in splits]
         payment['splits'] = splits
     splits = Split.query.filter(
         or_(Split.user_id == current_user.id, Split.payer_id == current_user.id)
-    ).all()
+    ).order_by(Split.time.desc()).all()  # Sort splits by date
     splits = [split.serialize() for split in splits]
-    return render_template('history.html', payments=payments, splits=splits)
-
-@app.route('/analytics')
-@login_required
-def analytics():
-    payments = Payment.query.filter_by(user_id=current_user.id).all()
-    payments = [payment.serialize() for payment in payments]
-    splits = Split.query.filter(
-        or_(Split.user_id == current_user.id, Split.payer_id == current_user.id)
-    ).all()
-    splits = [split.serialize() for split in splits][:6]
     debt = Split.query.filter_by(user_id=current_user.id, status=False).all()
     debt = sum([int(entity.serialize()["amount"]) for entity in debt])
     debt_owed = Split.query.filter_by(payer_id=current_user.id, status=False).all()
     debt_owed = sum([int(entity.serialize()["amount"]) for entity in debt_owed])
     expense = sum(
-    [int(entity.serialize()["amount"]) for entity in Split.query.filter_by(user_id=current_user.id)
-        .filter(extract('year', Split.time) == current_year)
-        .filter(extract('month', Split.time) == current_month)
-        .all()]
+        [int(entity.serialize()["amount"]) for entity in Split.query.filter_by(user_id=current_user.id)
+         .filter(extract('year', Split.time) == current_year)
+         .filter(extract('month', Split.time) == current_month)
+         .order_by(Split.time.desc())  # Order by date
+         .all()]
+    )
+    return render_template('history.html', payments=payments, splits=splits, debt=debt, debt_owed=debt_owed, expense=expense)
+
+@app.route('/settleSplit/<int:splitId>', methods=['POST'])
+@login_required
+def settle_split(splitId):
+    if request.method == 'POST':
+        split = Split.query.filter_by(split_id=splitId).first()
+        split.status = True
+        db.session.commit()
+        return redirect(url_for('history'))
+
+
+@app.route('/analytics')
+@login_required
+def analytics():
+    payments = Payment.query.filter_by(user_id=current_user.id).order_by(Payment.time.desc()).all()
+    payments = [payment.serialize() for payment in payments]
+    splits = Split.query.filter(
+        or_(Split.user_id == current_user.id, Split.payer_id == current_user.id)
+    ).order_by(Split.time.desc()).all()  # Sort splits by date
+    splits = [split.serialize() for split in splits][:6]  # Limit to the latest 6 splits
+    debt = Split.query.filter_by(user_id=current_user.id, status=False).all()
+    debt = sum([int(entity.serialize()["amount"]) for entity in debt])
+    debt_owed = Split.query.filter_by(payer_id=current_user.id, status=False).all()
+    debt_owed = sum([int(entity.serialize()["amount"]) for entity in debt_owed])
+    expense = sum(
+        [int(entity.serialize()["amount"]) for entity in Split.query.filter_by(user_id=current_user.id)
+         .filter(extract('year', Split.time) == current_year)
+         .filter(extract('month', Split.time) == current_month)
+         .order_by(Split.time.desc())  # Order by date
+         .all()]
     )
     return render_template('analytics.html', payments=payments, splits=splits, debt=debt, debt_owed=debt_owed, expense=expense)
 
