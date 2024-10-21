@@ -1,29 +1,26 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, flash, session, make_response, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from flask_security import Security, SQLAlchemyUserDatastore, login_required, \
-    UserMixin, RoleMixin, logout_user, current_user
-from flask_security.utils import hash_password
+from flask_restful import Resource, Api, reqparse
+from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import or_, func, extract, and_
 import random
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+import jwt
+import json
+from flask_cors import CORS, cross_origin
+from functools import wraps
 
 current_year = datetime.now().year
 current_month = datetime.now().month
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'thisisasecret'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite3'
-app.config['SECURITY_PASSWORD_SALT'] = 'thisisasecretsalt'
-app.config['SECURITY_POST_LOGIN_VIEW'] = '/dashboard'
-app.config['SECURITY_POST_LOGOUT_VIEW'] = '/login'
 app.app_context().push()
-
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.sqlite3'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = 'this is secret'
 db = SQLAlchemy(app)
-
-roles_users = db.Table('roles_users',
-    db.Column('user_id', db.Integer, db.ForeignKey('user.id')),
-    db.Column('role_id', db.Integer, db.ForeignKey('role.id')))
-
+cors = CORS(app, resources={r"/*": {"origins": "*"}})
+api = Api(app)
 
 class Payment(db.Model):
     payment_id = db.Column(db.Integer, primary_key=True)
@@ -73,33 +70,7 @@ class Split(db.Model):
             'time': datetime.strftime(self.time, "%d-%m-%Y"),
         }
 
-class Group(db.Model):
-    group_id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    
-    members = db.relationship('GroupMember', backref='group', lazy=True)
-    payments = db.relationship('GroupPayment', backref='group', lazy=True)
-
-    def __repr__(self):
-        return f"Group('{self.group_id}', '{self.name}')"
-
-class GroupMember(db.Model):
-    member_id = db.Column(db.Integer, primary_key=True)
-    group_id = db.Column(db.Integer, db.ForeignKey('group.group_id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-
-    def __repr__(self):
-        return f"GroupMember('{self.member_id}')"
-
-class GroupPayment(db.Model):
-    group_payment_id = db.Column(db.Integer, primary_key=True)
-    group_id = db.Column(db.Integer, db.ForeignKey('group.group_id'), nullable=False)
-    payment_id = db.Column(db.Integer, db.ForeignKey('payment.payment_id'), nullable=False)
-
-    def __repr__(self):
-        return f"GroupPayment('{self.group_payment_id}', '{self.group_id}', '{self.payment_id}')"
-
-class User(db.Model, UserMixin):
+class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100))
     email = db.Column(db.String(100), unique=True)
@@ -107,18 +78,9 @@ class User(db.Model, UserMixin):
     password = db.Column(db.String(255))
     active = db.Column(db.Boolean)
     confirmed_at = db.Column(db.DateTime)
-    fs_uniquifier = db.Column(db.String(255), unique=True, nullable=False)
-    roles = db.relationship('Role', secondary=roles_users, backref=db.backref('users', lazy='dynamic'))
-    payments = db.relationship('Payment', backref='payer', lazy=True)
-    splits_received = db.relationship('Split', foreign_keys='Split.user_id', backref='user', lazy=True)
-    splits_paid = db.relationship('Split', foreign_keys='Split.payer_id', backref='payer', lazy=True)
-    roles = db.relationship('Role', secondary=roles_users, backref=db.backref('users', lazy='dynamic'))
 
     def __repr__(self):
         return f"User('{self.id}', '{self.name}', '{self.email}')"
-    
-    def __str__(self):
-        return self.name
     
     def serialize(self):
         return {
@@ -127,153 +89,291 @@ class User(db.Model, UserMixin):
             'email': self.email,
             'username': self.username
         }
+    
+    def check_password(self, password):
+        return check_password_hash(self.password, password)
+    
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if request.headers.get('x-access-token'):
+            token = request.headers['x-access-token']
+        if not token:
+            return make_response(jsonify({'message': 'Token is missing!'}), 401)
+        try:
+            data = jwt.decode(
+                token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            current_user = User.query.filter_by(
+                id=data['public_id']).first()
+        except:
+            return make_response(jsonify({'message': 'Token is invalid!'}), 401)
+        return f(current_user.id, *args, **kwargs)
+    return decorated
 
-class Role(db.Model, RoleMixin):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(40))
-    description = db.Column(db.String(255))
+# Check if API is working with each template render
+class apiCheck(Resource):
 
-user_datastore = SQLAlchemyUserDatastore(db, User, Role)
-security = Security(app, user_datastore)
+    # Check API
+    def get(self):
+        return make_response(jsonify({'status': 'Success'}), 200)
 
-@app.route('/register', methods=['POST', 'GET'])
-def register():
-    if request.method == 'POST':
-        user_datastore.create_user(
-            name = request.form.get('name'),
-            email=request.form.get('email'),
-            username=request.form.get('username'),
+api.add_resource(apiCheck, '/apiCheck')
+
+# Register new user
+class registerUser(Resource):
+
+    # Register new user
+    def post(self):
+        data = request.args
+        if User.query.filter_by(email=data['email']).first() or User.query.filter_by(username=data['username']).first():
+            return make_response(jsonify({'message': 'Email or username already exists'}), 400)
+        hashed_password = generate_password_hash(data['password'])
+        new_user = User(
+            name=data['name'],
+            email=data['email'],
+            username=data['username'],
+            password=hashed_password,
             active=True,
-            confirmed_at = datetime.now(),
-            password=hash_password(request.form.get('password'))
+            confirmed_at=datetime.now()
         )
+        db.session.add(new_user)
         db.session.commit()
-        return redirect(url_for('dashboard'))
-    return render_template('register.html')
+        return make_response(jsonify({'message': 'New user created!'}), 201)
 
-@app.route('/search/<string:query>', methods=['GET'])
-@login_required
-def search(query):
-    users = User.query.filter(User.name.like(f'%{query}%')).all()
-    users = [user.serialize() for user in users]
-    return {'users': users}
+api.add_resource(registerUser, '/api/register')
 
-@app.route('/logout')
-@login_required
-def logout():
-    logout_user()  # Logs the user out
-    return redirect(url_for('security.login'))  # Redirects to the login page after logout
+# User login
+class Login(Resource):
 
-@app.route('/payment', methods=['GET','POST'])
-@login_required
-def payment():
-    if request.method == 'POST':
-        data = request.get_json()
-        amount = data['amount']
-        purpose = data['description']
-        date_format = "%Y-%m-%d"
-        payment_date = datetime.strptime(data['date'], date_format)
-        split = data['splitWith']
-        new_payment_id = random.randint(0, 999999)
-        print(data)
-        new_payment = Payment(amount=int(amount), purpose=purpose, time=payment_date, user_id=current_user.id, payment_id=new_payment_id)
-        split.pop(0)
-        for user in split:
-            new_split = Split(payment_id = new_payment_id, user_id=user["id"], amount=user["amount"],
-                              time=payment_date, payer_id=current_user.id, status=False)
-            db.session.add(new_split)
-        db.session.add(new_payment)
-        db.session.commit()
-        return redirect(url_for('dashboard'))
-    return render_template('payment.html')
+    # Login a user and obtain JWT token
+    def post(self):
+        auth = request.args
+        email = auth['email']
+        password = auth['password']
+        if not email or not password:
+            return make_response(jsonify({'message': 'Please enter all fields!', 'status': 'error'}), 401)
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return make_response(jsonify({'message': 'User does not exist!', 'status': 'error'}), 404)
+        if check_password_hash(user.password, password):
+            token = jwt.encode({'public_id': user.id, 'exp': datetime.now() + timedelta(minutes=30)},
+                                  app.config['SECRET_KEY'], algorithm="HS256")
+            return make_response(jsonify({'token': token, 'user_data': user.serialize(), 'status': 'success'}), 200)
+        return make_response(jsonify({'message': 'Incorrect password!', 'status': 'error'}), 401)
 
-@app.route('/dashboard')
-@login_required
-def dashboard():
-    payments = Payment.query.filter_by(user_id=current_user.id).order_by(Payment.time.desc()).all()
-    payments = [payment.serialize() for payment in payments]
-    splits = Split.query.filter(
-        or_(
-            and_(Split.user_id == current_user.id, Split.payer_id != current_user.id),
-            and_(Split.payer_id == current_user.id, Split.user_id != current_user.id)
-        ),
-        and_(extract('year', Split.time) == current_year, extract('month', Split.time) == current_month)
-    ).order_by(Split.time.desc()).all()
-    splits = [split.serialize() for split in splits][:6]  # Limit to the latest 6 splits
-    debt = Split.query.filter_by(user_id=current_user.id, status=False).all()
-    debt = sum([int(entity.serialize()["amount"]) for entity in debt])
-    debt_owed = Split.query.filter_by(payer_id=current_user.id, status=False).all()
-    debt_owed = sum([int(entity.serialize()["amount"]) for entity in debt_owed])
-    expense = sum(
-        [int(entity.serialize()["amount"]) for entity in Split.query.filter_by(user_id=current_user.id)
-         .filter(extract('year', Split.time) == current_year)
-         .filter(extract('month', Split.time) == current_month)
-         .order_by(Split.time.desc())  # Order by date
-         .all()]
-    )
-    return render_template('dashboard.html', payments=payments, splits=splits, debt=debt, debt_owed=debt_owed, expense=expense)
+api.add_resource(Login, '/api/login')
 
-@app.route('/history')
-@login_required
-def history():
-    payments = Payment.query.filter_by(user_id=current_user.id).order_by(Payment.time.desc()).all()
-    payments = [payment.serialize() for payment in payments]
-    for payment in payments:
-        splits = Split.query.filter_by(payment_id=payment['payment_id']).order_by(Split.time.desc()).all()
+
+class searchUser(Resource):
+
+        # Search for a user by username or email
+        @token_required
+        def get(self, current_user, search):
+            users = User.query.filter(
+                or_(User.name.like(f'%{search}%'), User.email.like(f'%{search}%'))
+            ).all()
+            users = [user.serialize() for user in users]
+            return make_response(jsonify({'users': users}), 200)
+        
+api.add_resource(searchUser, '/api/search/<string:search>')
+
+class userDetails(Resource):
+    
+        # Get user's details
+        @token_required
+        def get(self, current_user):
+            return make_response(jsonify({'user': current_user.serialize()}), 200)
+        
+api.add_resource(userDetails, '/api/user')
+
+class splits(Resource):
+
+    # Get all splits where user_id maybe current user or payee might be current user
+    @token_required
+    def get(self, current_user):
+        data = request.headers.get('x-access-token')
+        payer_id = jwt.decode(data, app.config['SECRET_KEY'], algorithms=["HS256"])["public_id"]
+        splits = Split.query.filter(
+            or_(
+                and_(Split.user_id == payer_id, Split.payer_id != payer_id),
+                and_(Split.payer_id == payer_id, Split.user_id != payer_id)
+            )
+        ).order_by(Split.time.desc()).all()
         splits = [split.serialize() for split in splits]
-        payment['splits'] = splits
-    splits = Split.query.filter(
-        or_(Split.user_id == current_user.id, Split.payer_id == current_user.id)
-    ).order_by(Split.time.desc()).all()  # Sort splits by date
-    splits = [split.serialize() for split in splits]
-    debt = Split.query.filter_by(user_id=current_user.id, status=False).all()
-    debt = sum([int(entity.serialize()["amount"]) for entity in debt])
-    debt_owed = Split.query.filter_by(payer_id=current_user.id, status=False).all()
-    debt_owed = sum([int(entity.serialize()["amount"]) for entity in debt_owed])
-    expense = sum(
-        [int(entity.serialize()["amount"]) for entity in Split.query.filter_by(user_id=current_user.id)
-         .filter(extract('year', Split.time) == current_year)
-         .filter(extract('month', Split.time) == current_month)
-         .order_by(Split.time.desc())  # Order by date
-         .all()]
-    )
-    return render_template('history.html', payments=payments, splits=splits, debt=debt, debt_owed=debt_owed, expense=expense)
+        return make_response(jsonify({'splits': splits}), 200)
+    
+    @token_required
+    def put(self, current_user):
+        data = request.args
+        try:
+            assert 'split_id' in data.keys(), "Missing keys"
+            split = Split.query.filter_by(split_id=data['split_id']).first()
+            split.status = True
+            db.session.commit()
+            return make_response(jsonify({'message': 'Split settled!'}), 200)
+        except Exception as e:
+            return make_response(jsonify({'message': str(e)}), 400)
+    
+api.add_resource(splits, '/api/splits')
 
-@app.route('/settleSplit/<int:splitId>', methods=['POST'])
-@login_required
-def settle_split(splitId):
-    if request.method == 'POST':
-        split = Split.query.filter_by(split_id=splitId).first()
-        split.status = True
-        db.session.commit()
-        return redirect(url_for('history'))
+class payments(Resource):
 
+    # Get all payments where user_id maybe current user
+    @token_required
+    def get(self, current_user):
+        data = request.headers.get('x-access-token')
+        token_data = jwt.decode(data, app.config['SECRET_KEY'], algorithms=["HS256"])
+        payments = Payment.query.filter_by(user_id=token_data["public_id"]).order_by(Payment.time.desc()).all()
+        payments = [payment.serialize() for payment in payments]
+        return make_response(jsonify({'payments': payments}), 200)
+    
+    @token_required
+    def post(self, current_user):
+        try:
+            data = request.headers.get('x-access-token')
+            payer_id = jwt.decode(data, app.config['SECRET_KEY'], algorithms=["HS256"])["public_id"]
+            data = request.args
 
-@app.route('/analytics')
-@login_required
-def analytics():
-    payments = Payment.query.filter_by(user_id=current_user.id).order_by(Payment.time.desc()).all()
-    payments = [payment.serialize() for payment in payments]
-    splits = Split.query.filter(
-        or_(Split.user_id == current_user.id, Split.payer_id == current_user.id)
-    ).order_by(Split.time.desc()).all()  # Sort splits by date
-    splits = [split.serialize() for split in splits][:6]  # Limit to the latest 6 splits
-    debt = Split.query.filter_by(user_id=current_user.id, status=False).all()
-    debt = sum([int(entity.serialize()["amount"]) for entity in debt])
-    debt_owed = Split.query.filter_by(payer_id=current_user.id, status=False).all()
-    debt_owed = sum([int(entity.serialize()["amount"]) for entity in debt_owed])
-    expense = sum(
-        [int(entity.serialize()["amount"]) for entity in Split.query.filter_by(user_id=current_user.id)
-         .filter(extract('year', Split.time) == current_year)
-         .filter(extract('month', Split.time) == current_month)
-         .order_by(Split.time.desc())  # Order by date
-         .all()]
-    )
-    return render_template('analytics.html', payments=payments, splits=splits, debt=debt, debt_owed=debt_owed, expense=expense)
+            assert all(key in data.keys() for key in [
+                'amount', 'description', 'date', 'splitWith', 'splitMode', 'payer']), "Missing keys"
+            
+            payer = data.get('payer')
+            
+            amount = 0 # Amount of the payment
+            try: amount = int(data['amount'])
+            except ValueError: amount = 1
+            assert amount > 0, "Amount must be greater than 0"
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+            purpose = data['description'] # Purpose of the payment
+
+            try:
+                date_format = "%Y-%m-%d"
+                payment_date = datetime.strptime(data['date'], date_format) # Date of the payment
+            except:
+                return make_response(jsonify({'message': 'Invalid date format'}), 400)
+
+            splitMode = data['splitMode'] # Equal/ Percentage or exact amount
+            assert splitMode in ["equal", "percentage", "exact"], "Invalid split mode"
+
+            split = {} # Split for each username
+
+            if splitMode == "equal":
+                splitWith = data['splitWith'] # Users to split with usernames separated by commas (including current user)
+
+                try: # Check for format
+                    members = splitWith.split(",")
+                except:
+                    return make_response(jsonify({'message': 'Invalid format for splitWith'}), 400)
+
+                for member in members: # Here 'member' contains usernames
+                    member = member.strip()
+                    user = User.query.filter_by(username=member).first()
+
+                    if not user: # User existance
+                        return make_response(jsonify({'message': f'User {member} does not exist!'}), 400)
+                    
+                    if member in split.keys(): # User already in list
+                        return make_response(jsonify({'message': f'User {member} is repeated!'}), 400)
+                    
+                    split[member] = round(amount/len(members), 2) # Add user to split list with equal amount
+
+            elif splitMode == "percentage":
+                splitWith = data['splitWith']
+
+                try:
+                    members = eval(splitWith)
+                except:
+                    return make_response(jsonify({'message': 'Invalid format for splitWith'}), 400)
+
+                total_percentage = 0
+
+                for member, percentage in members.items():
+                    user = User.query.filter_by(username=member).first()
+
+                    if not user: # User existance
+                        return make_response(jsonify({'message': f'User {member} does not exist!'}), 400)
+
+                    if total_percentage + percentage > 100: # Correct percentage
+                        return make_response(jsonify({'message': 'Total percentage must be equal to 100'}), 400)
+                    
+                    try:
+                        calculatedAmount = amount * (float(percentage) / 100)
+                    except:
+                        return make_response(jsonify({'message': 'Invalid percentage'}), 400)
+                
+                    total_percentage += percentage
+                    split[member] = round(calculatedAmount, 2) # Add user to split list with percentage amount
+
+            elif splitMode == "exact":
+                splitWith = data['splitWith']
+
+                try:
+                    members = eval(splitWith)
+                except:
+                    return make_response(jsonify({'message': 'Invalid format for splitWith'}), 400)
+
+                total_amount = 0
+
+                for member, a in members.items():
+                    user = User.query.filter_by(username=member).first()
+
+                    if not user:
+                        return make_response(jsonify({'message': f'User {member} does not exist!'}), 400)
+                    
+                    if total_amount + a > amount and total_amount < amount: # Correct amount
+                        return make_response(jsonify({'message': 'Total amount must be equal to total amount'}), 400)
+                    else:
+                        try:
+                            a = float(a)
+                        except:
+                            return make_response(jsonify({'message': 'Invalid amount'}), 400)
+                        
+                    total_amount += a
+                    split[member] = a
+        
+            new_payment_id = random.randint(0, 999999)
+            new_payment = Payment(payment_id=new_payment_id, user_id=payer_id, amount=amount,
+                                    time=payment_date, purpose=purpose, status=False)
+            
+            for user, amount in split.items():
+                userDetails = User.query.filter_by(username=user).first()
+                new_split = Split(payment_id=new_payment_id, user_id=userDetails.id, amount=amount,
+                                    time=payment_date, payer_id=payer_id, status=False)
+                db.session.add(new_split)
+                
+            db.session.add(new_payment)
+            db.session.commit()
+
+        except Exception as e:
+            return make_response(jsonify({'message': str(e)}), 400)
+        return make_response(jsonify({'message': 'Payment added!'}), 201)
+    
+    @token_required
+    def delete(self, current_user):
+        data = request.args
+        try:
+            assert all(key in data.keys() for key in ['payment_id']), "Missing keys"
+            payment = Payment.query.filter_by(payment_id=data['payment_id']).first()
+            splits = Split.query.filter_by(payment_id=data['payment_id']).all()
+            for split in splits:
+                db.session.delete(split)
+            db.session.delete(payment)
+            db.session.commit()
+            return make_response(jsonify({'message': 'Payment deleted!'}), 200)
+        except Exception as e:
+            return make_response(jsonify({'message': str(e)}), 400)
+    
+api.add_resource(payments, '/api/payments')
+
+class checkAuth(Resource):
+
+    # Check if user is authenticated
+    @token_required
+    def get(self, current_user):
+        return make_response(jsonify({'message': 'User is authenticated!'}), 200)
+    
+api.add_resource(checkAuth, '/api/auth')
 
 if __name__ == '__main__':
     db.create_all()
