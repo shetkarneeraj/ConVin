@@ -1,6 +1,5 @@
 Here's the complete README content formatted in Markdown for your `README.md` file:
 
-````markdown
 # Application README
 
 ## Overview
@@ -23,6 +22,7 @@ For **macOS/Linux**:
    ```bash
    sh run.sh
    ```
+
 ````
 
 ### Troubleshooting
@@ -73,3 +73,4 @@ The API documentation is available at the root route (`/`).
 ## Conclusion
 
 Follow these instructions to get the application running smoothly. For any further issues, please check the respective scripts or contact support.
+````
