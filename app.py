@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, make_response, jsonify
+# Setup
+from flask import Flask, render_template, request, redirect, url_for, flash, session, make_response, jsonify, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_restful import Resource, Api, reqparse
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -9,6 +10,8 @@ import jwt
 import json
 from flask_cors import CORS, cross_origin
 from functools import wraps
+import pandas as pd
+from io import BytesIO
 
 current_year = datetime.now().year
 current_month = datetime.now().month
@@ -22,6 +25,7 @@ db = SQLAlchemy(app)
 cors = CORS(app, resources={r"/*": {"origins": "*"}})
 api = Api(app)
 
+# Including payments data
 class Payment(db.Model):
     payment_id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -45,6 +49,7 @@ class Payment(db.Model):
             'status': self.status
         }
 
+# Including splits data
 class Split(db.Model):
     split_id = db.Column(db.Integer, primary_key=True)
     payment_id = db.Column(db.Integer, db.ForeignKey('payment.payment_id'), nullable=False)
@@ -62,10 +67,10 @@ class Split(db.Model):
             'split_id': self.split_id,
             'payment_id': self.payment_id,
             'purpose': Payment.query.filter(Payment.payment_id == self.payment_id).first().purpose,
-            'user': User.query.filter(User.id == self.user_id).first().serialize(),
-            'payer_id': User.query.filter(User.id == self.payer_id).first().serialize(),
+            'user': User.query.filter(User.id == self.user_id).first().serialize(), # Split is for
+            'payer_id': User.query.filter(User.id == self.payer_id).first().serialize(), # Split is created by
             'amount': round(self.amount, 2),
-            'paid': self.status,
+            'paid': self.status, # True if paid or False otherwise
             'status': self.status,
             'time': datetime.strftime(self.time, "%d-%m-%Y"),
         }
@@ -120,6 +125,10 @@ class apiCheck(Resource):
 
 api.add_resource(apiCheck, '/apiCheck')
 
+@app.route('/', methods=['GET'])
+def home():
+    return render_template('documentation.html')
+
 # Register new user
 class registerUser(Resource):
 
@@ -157,6 +166,7 @@ class Login(Resource):
         if not user:
             return make_response(jsonify({'message': 'User does not exist!', 'status': 'error'}), 404)
         if check_password_hash(user.password, password):
+            # Generating JWT Token
             token = jwt.encode({'public_id': user.id, 'exp': datetime.now() + timedelta(minutes=30)},
                                   app.config['SECRET_KEY'], algorithm="HS256")
             return make_response(jsonify({'token': token, 'user_data': user.serialize(), 'status': 'success'}), 200)
@@ -203,6 +213,7 @@ class splits(Resource):
         splits = [split.serialize() for split in splits]
         return make_response(jsonify({'splits': splits}), 200)
     
+    # Settle the split
     @token_required
     def put(self, current_user):
         data = request.args
@@ -228,6 +239,7 @@ class payments(Resource):
         payments = [payment.serialize() for payment in payments]
         return make_response(jsonify({'payments': payments}), 200)
     
+    # Add a new payment
     @token_required
     def post(self, current_user):
         try:
@@ -235,10 +247,9 @@ class payments(Resource):
             payer_id = jwt.decode(data, app.config['SECRET_KEY'], algorithms=["HS256"])["public_id"]
             data = request.args
 
+            # Assertion for keys
             assert all(key in data.keys() for key in [
-                'amount', 'description', 'date', 'splitWith', 'splitMode', 'payer']), "Missing keys"
-            
-            payer = data.get('payer')
+                'amount', 'description', 'date', 'splitWith', 'splitMode']), "Missing keys"
             
             amount = 0 # Amount of the payment
             try: amount = int(data['amount'])
@@ -258,7 +269,7 @@ class payments(Resource):
 
             split = {} # Split for each username
 
-            if splitMode == "equal":
+            if splitMode == "equal": # Split equally
                 splitWith = data['splitWith'] # Users to split with usernames separated by commas (including current user)
 
                 try: # Check for format
@@ -278,7 +289,7 @@ class payments(Resource):
                     
                     split[member] = round(amount/len(members), 2) # Add user to split list with equal amount
 
-            elif splitMode == "percentage":
+            elif splitMode == "percentage": # Split with percentage
                 splitWith = data['splitWith']
 
                 try:
@@ -305,7 +316,7 @@ class payments(Resource):
                     total_percentage += percentage
                     split[member] = round(calculatedAmount, 2) # Add user to split list with percentage amount
 
-            elif splitMode == "exact":
+            elif splitMode == "exact": # Split with exact amount
                 splitWith = data['splitWith']
 
                 try:
@@ -334,21 +345,22 @@ class payments(Resource):
         
             new_payment_id = random.randint(0, 999999)
             new_payment = Payment(payment_id=new_payment_id, user_id=payer_id, amount=amount,
-                                    time=payment_date, purpose=purpose, status=False)
+                                    time=payment_date, purpose=purpose, status=False) # New payment
             
-            for user, amount in split.items():
+            for user, amount in split.items(): # Adding splits
                 userDetails = User.query.filter_by(username=user).first()
                 new_split = Split(payment_id=new_payment_id, user_id=userDetails.id, amount=amount,
                                     time=payment_date, payer_id=payer_id, status=False)
                 db.session.add(new_split)
                 
             db.session.add(new_payment)
-            db.session.commit()
+            db.session.commit() # Committing the transaction
 
         except Exception as e:
             return make_response(jsonify({'message': str(e)}), 400)
         return make_response(jsonify({'message': 'Payment added!'}), 201)
     
+    # Delete a payment
     @token_required
     def delete(self, current_user):
         data = request.args
@@ -374,6 +386,45 @@ class checkAuth(Resource):
         return make_response(jsonify({'message': 'User is authenticated!'}), 200)
     
 api.add_resource(checkAuth, '/api/auth')
+
+@app.route('/api/download_balance_sheet', methods=['GET'])
+def download_balance_sheet():
+    # Fetching all payments and their associated splits from the database
+    payments = Payment.query.all()
+    splits = Split.query.all()
+
+    # Create DataFrames
+    payments_data = [payment.serialize() for payment in payments]
+    splits_data = [split.serialize() for split in splits]
+
+    payments_df = pd.DataFrame(payments_data)
+    splits_df = pd.DataFrame(splits_data)
+
+    # Merging payments and splits to show individual expenses
+    merged_df = payments_df.merge(splits_df, on='payment_id', how='left', suffixes=('', '_split'))
+
+    # Creating a summary for overall expenses
+    overall_expenses = payments_df.groupby('user_id')['amount'].sum().reset_index()
+    overall_expenses.columns = ['User ID', 'Total Expenses']
+
+    # Creating a BytesIO object for the Excel file
+    output = BytesIO()
+    writer = pd.ExcelWriter(output, engine='openpyxl')
+
+    # Write the merged payments and splits to a sheet
+    merged_df.to_excel(writer, sheet_name='Individual Expenses', index=False)
+    # Write the overall expenses to another sheet
+    overall_expenses.to_excel(writer, sheet_name='Overall Expenses', index=False)
+
+    # Save the writer and close it
+    writer._save()
+    writer.close()
+
+    # Set the pointer of the BytesIO object to the beginning
+    output.seek(0)
+
+    # Return the file as a download
+    return send_file(output, download_name="balance_sheet_splitwise.xlsx", as_attachment=True)
 
 if __name__ == '__main__':
     db.create_all()

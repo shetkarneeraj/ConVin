@@ -1,0 +1,10 @@
+Flask
+Flask-SQLAlchemy
+Flask-Migrate
+Flask-RESTful
+Flask_cors
+PyJWT==2.9.0
+Pandas
+openpyxl
+sqlalchemy
+Werkzeug

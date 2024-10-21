@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>API Documentation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+
+  <body class="bg-gray-100 font-sans leading-normal tracking-normal">
+    <div class="container mx-auto px-4 py-6 flex">
+      <!-- Sidebar -->
+      <aside class="w-1/4 bg-white p-6 shadow-md h-full">
+        <h2 class="text-2xl font-bold mb-4">API Documentation</h2>
+        <nav>
+          <ul class="space-y-4">
+            <li>
+              <a href="#apiCheck" class="text-blue-500 hover:underline"
+                >API Check</a
+              >
+            </li>
+            <li>
+              <a href="#register" class="text-blue-500 hover:underline"
+                >Register</a
+              >
+            </li>
+            <li>
+              <a href="#login" class="text-blue-500 hover:underline">Login</a>
+            </li>
+            <li>
+              <a href="#search" class="text-blue-500 hover:underline"
+                >Search Users</a
+              >
+            </li>
+            <li>
+              <a href="#download" class="text-blue-500 hover:underline"
+                >Download</a
+              >
+            </li>
+            <li>
+              <a href="#payments" class="text-blue-500 hover:underline"
+                >Payments</a
+              >
+            </li>
+            <li>
+              <a href="#user" class="text-blue-500 hover:underline"
+                >User Details</a
+              >
+            </li>
+            <li>
+              <a href="#splits" class="text-blue-500 hover:underline">Splits</a>
+            </li>
+          </ul>
+        </nav>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="w-3/4 bg-gray-100 p-6">
+        <!-- /apiCheck -->
+        <section id="apiCheck" class="bg-white shadow-md rounded p-6 mb-8">
+          <h2 class="text-xl font-semibold mb-4">
+            API Endpoint: <span class="text-blue-500">/apiCheck</span>
+          </h2>
+          <p class="mb-4">Checks the status of the API.</p>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Method: GET</h3>
+            <p class="text-sm">
+              This endpoint requires no authentication or parameters.
+            </p>
+          </div>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Response:</h3>
+            <pre class="bg-gray-200 p-4 rounded">
+{
+    "status": "Success"
+}
+            </pre>
+          </div>
+        </section>
+
+        <!-- /api/register -->
+        <section id="register" class="bg-white shadow-md rounded p-6 mb-8">
+          <h2 class="text-xl font-semibold mb-4">
+            API Endpoint: <span class="text-blue-500">/api/register</span>
+          </h2>
+          <p class="mb-4">Registers a new user in the system.</p>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Method: POST</h3>
+            <p class="text-sm">Requires the following parameters:</p>
+            <ul class="list-disc list-inside">
+              <li><strong>name</strong>: User's full name (string)</li>
+              <li><strong>email</strong>: User's email address (string)</li>
+              <li><strong>username</strong>: Desired username (string)</li>
+              <li><strong>password</strong>: User's password (string)</li>
+            </ul>
+          </div>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Response:</h3>
+            <pre class="bg-gray-200 p-4 rounded">
+{
+    "message": "New user created!"
+}
+            </pre>
+          </div>
+        </section>
+
+        <!-- /api/login -->
+        <section id="login" class="bg-white shadow-md rounded p-6 mb-8">
+          <h2 class="text-xl font-semibold mb-4">
+            API Endpoint: <span class="text-blue-500">/api/login</span>
+          </h2>
+          <p class="mb-4">Logs in a user and returns a JWT token.</p>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Method: POST</h3>
+            <p class="text-sm">Requires the following parameters:</p>
+            <ul class="list-disc list-inside">
+              <li><strong>email</strong>: User's email address (string)</li>
+              <li><strong>password</strong>: User's password (string)</li>
+            </ul>
+          </div>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Response:</h3>
+            <pre class="bg-gray-200 p-4 rounded">
+{
+    "token": "JWT token",
+    "user_data": {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "username": "johndoe"
+    },
+    "status": "success"
+}
+            </pre>
+          </div>
+        </section>
+
+        <!-- /api/download_balance_sheet -->
+        <section id="download" class="bg-white shadow-md rounded p-6 mb-8">
+          <h2 class="text-xl font-semibold mb-4">
+            API Endpoint:
+            <span class="text-blue-500">/api/download_balance_sheet</span>
+          </h2>
+          <p class="mb-4">
+            Generates an Excel sheet containing all payments and their
+            associated splits, showing individual expenses and overall expenses
+            for all users.
+          </p>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Method: GET</h3>
+            <p class="text-sm">
+              Requires a valid JWT token for authentication.
+            </p>
+          </div>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Response:</h3>
+            <p class="text-sm">Returns an Excel file containing:</p>
+            <ul class="list-disc list-inside">
+              <li>
+                <strong>Individual Expenses:</strong> A detailed list of all
+                payments and their splits.
+              </li>
+              <li>
+                <strong>Overall Expenses:</strong> A summary of total expenses
+                grouped by user.
+              </li>
+            </ul>
+          </div>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Response Example:</h3>
+            <pre class="bg-gray-200 p-4 rounded">
+        HTTP/1.1 200 OK
+        Content-Disposition: attachment; filename="balance_sheet_splitwise.xlsx"
+        Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+        (binary data)
+                </pre
+            >
+          </div>
+        </section>
+
+        <!-- /api/payments -->
+        <section id="payments" class="bg-white shadow-md rounded p-6 mb-8">
+          <h2 class="text-xl font-semibold mb-4">
+            API Endpoint: <span class="text-blue-500">/api/payments</span>
+          </h2>
+          <p class="mb-4">
+            Handles the management of payments. Allows users to view, add, or
+            delete payments.
+          </p>
+
+          <!-- GET /api/payments -->
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Method: GET</h3>
+            <p class="text-sm mb-2">
+              Retrieve all payments for the authenticated user, ordered by time
+              in descending order.
+            </p>
+            <h4 class="font-semibold">Headers:</h4>
+            <ul class="list-disc list-inside">
+              <li><strong>x-access-token</strong>: JWT token (required)</li>
+            </ul>
+            <h4 class="font-semibold mt-2">Response:</h4>
+            <pre class="bg-gray-200 p-4 rounded">
+{
+    "payments": [
+        {
+            "payment_id": 1,
+            "amount": 100,
+            "purpose": "Dinner",
+            "time": "2024-10-15",
+            "status": false
+        },
+        ...
+    ]
+}
+            </pre>
+          </div>
+        </section>
+
+        <!-- /api/user -->
+        <section id="user" class="bg-white shadow-md rounded p-6 mb-8">
+          <h2 class="text-xl font-semibold mb-4">
+            API Endpoint: <span class="text-blue-500">/api/user</span>
+          </h2>
+          <p class="mb-4">Retrieves the details of the authenticated user.</p>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Method: GET</h3>
+            <p class="text-sm">Requires a valid JWT token.</p>
+          </div>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Response:</h3>
+            <pre class="bg-gray-200 p-4 rounded">
+{
+    "user": {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "username": "johndoe"
+    }
+}
+            </pre>
+          </div>
+        </section>
+
+        <!-- /api/splits -->
+        <section id="splits" class="bg-white shadow-md rounded p-6 mb-8">
+          <h2 class="text-xl font-semibold mb-4">
+            API Endpoint: <span class="text-blue-500">/api/splits</span>
+          </h2>
+          <p class="mb-4">Handles payment splits.</p>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Method: GET</h3>
+            <p class="text-sm">
+              Retrieves all splits involving the current user.
+            </p>
+            <p class="text-sm">Requires a valid JWT token.</p>
+          </div>
+
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Response:</h3>
+            <pre class="bg-gray-200 p-4 rounded">
+{
+    "splits": [
+        {
+            "split_id": 1,
+            "payment_id": 10,
+            "purpose": "Dinner payment",
+            "user": {
+                "id": 2,
+                "name": "Jane Smith",
+                "email": "jane@example.com",
+                "username": "janesmith" },
+            "payer_id": {
+                "id": 1,
+                "name":"John Doe",
+                "email": "john@example.com",
+                "username": "johndoe" },
+            "amount": 25.00,
+            "paid": true,
+            "status": true,
+            "time": "2024-10-18" }, 
+        ... ] } </pre
+            >
+          </div>
+          <div class="mb-4">
+            <h3 class="text-lg font-semibold">Method: PUT</h3>
+            <p class="text-sm">Updates the status of a split as paid/unpaid.</p>
+            <ul class="list-disc list-inside">
+              <li><strong>split_id</strong>: The ID of the split (integer)</li>
+              <li><strong>status</strong>: Payment status (boolean)</li>
+            </ul>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
